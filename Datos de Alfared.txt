@@ -1,0 +1,177 @@
+-- ================================
+-- INSERTS DE PRUEBA (ALFARED)
+-- Ajustado a los nuevos nombres de ID
+-- ================================
+BEGIN;
+
+-- Asegurarse de usar esquema alfared (por si acaso)
+SET search_path = alfared, public;
+
+-- =========================================================
+-- ROLES Y PERMISOS (idempotentes)
+-- =========================================================
+INSERT INTO alfared.roles (nombre) VALUES
+('ADMIN'),
+('CONTADOR'),
+('ANALISTA'),
+('JEFE'),
+('CLIENTE')
+ON CONFLICT (nombre) DO NOTHING;
+
+INSERT INTO alfared.permisos (nombre) VALUES
+('CREAR_USUARIO'),
+('GESTIONAR_FACTURAS'),
+('PAGAR_FACTURA'),
+('CREAR_PQRS'),
+('GESTIONAR_PQRS')
+ON CONFLICT (nombre) DO NOTHING;
+
+-- Asignaciones rol-permiso (usa subqueries con id_rol, id_permiso)
+INSERT INTO alfared.roles_permisos (rol_id, permiso_id)
+VALUES
+( (SELECT id_rol FROM alfared.roles WHERE nombre='ADMIN'),    (SELECT id_permiso FROM alfared.permisos WHERE nombre='CREAR_USUARIO') ),
+( (SELECT id_rol FROM alfared.roles WHERE nombre='ADMIN'),    (SELECT id_permiso FROM alfared.permisos WHERE nombre='GESTIONAR_FACTURAS') ),
+( (SELECT id_rol FROM alfared.roles WHERE nombre='CONTADOR'), (SELECT id_permiso FROM alfared.permisos WHERE nombre='GESTIONAR_FACTURAS') ),
+( (SELECT id_rol FROM alfared.roles WHERE nombre='CONTADOR'), (SELECT id_permiso FROM alfared.permisos WHERE nombre='PAGAR_FACTURA') ),
+( (SELECT id_rol FROM alfared.roles WHERE nombre='ANALISTA'), (SELECT id_permiso FROM alfared.permisos WHERE nombre='GESTIONAR_PQRS') ),
+( (SELECT id_rol FROM alfared.roles WHERE nombre='JEFE'),     (SELECT id_permiso FROM alfared.permisos WHERE nombre='GESTIONAR_PQRS') ),
+( (SELECT id_rol FROM alfared.roles WHERE nombre='CLIENTE'),  (SELECT id_permiso FROM alfared.permisos WHERE nombre='CREAR_PQRS') )
+ON CONFLICT (rol_id, permiso_id) DO NOTHING;
+
+-- =========================================================
+-- USUARIOS (idempotentes por email)
+-- =========================================================
+INSERT INTO alfared.usuarios (nombre, apellido, email, contrasena, rol_id)
+VALUES
+('Carlos', 'Perez', 'carlos@empresa.com', '1234', (SELECT id_rol FROM alfared.roles WHERE nombre='ADMIN')),
+('Laura', 'Gomez', 'laura@empresa.com', '1234', (SELECT id_rol FROM alfared.roles WHERE nombre='CONTADOR')),
+('Andres', 'Lopez', 'andres@empresa.com', '1234', (SELECT id_rol FROM alfared.roles WHERE nombre='ANALISTA')),
+('Sofia', 'Martinez', 'sofia@empresa.com', '1234', (SELECT id_rol FROM alfared.roles WHERE nombre='JEFE')),
+('Maria', 'Ruiz', 'maria@gmail.com', '1234', (SELECT id_rol FROM alfared.roles WHERE nombre='CLIENTE')),
+('Juan', 'Torres', 'juan@gmail.com', '1234', (SELECT id_rol FROM alfared.roles WHERE nombre='CLIENTE'))
+ON CONFLICT (email) DO NOTHING;
+
+-- =========================================================
+-- DOCUMENTOS
+-- =========================================================
+INSERT INTO alfared.documentos (tipo, contenido)
+VALUES
+('Factura', 'Factura de servicios de internet'),
+('Contrato', 'Contrato de prestación de servicios'),
+('Reporte', 'Reporte mensual de pagos');
+
+-- =========================================================
+-- TRANSACCIONES
+-- =========================================================
+INSERT INTO alfared.transacciones (monto, tipo, estado)
+VALUES
+(120000, 'Pago Servicio', 'COMPLETADO'),
+(80000,  'Pago Servicio', 'PENDIENTE'),
+(150000, 'Compra Extra',  'PENDIENTE');
+
+-- =========================================================
+-- FACTURAS (referencia a usuarios por id_usuario)
+-- =========================================================
+INSERT INTO alfared.facturas (fecha_vencimiento, monto, usuario_id)
+VALUES
+('2025-09-30', 120000, (SELECT id_usuario FROM alfared.usuarios WHERE email='maria@gmail.com')),
+('2025-10-05',  80000, (SELECT id_usuario FROM alfared.usuarios WHERE email='juan@gmail.com')),
+('2025-09-28', 150000, (SELECT id_usuario FROM alfared.usuarios WHERE email='maria@gmail.com'));
+
+-- =========================================================
+-- PAGOS (referencia a id_factura)
+-- =========================================================
+INSERT INTO alfared.pagos (monto, metodo_pago, factura_id, estado)
+VALUES
+(120000, 'Tarjeta Crédito', (SELECT id_factura FROM alfared.facturas WHERE monto=120000 AND usuario_id=(SELECT id_usuario FROM alfared.usuarios WHERE email='maria@gmail.com') LIMIT 1), 'COMPLETADO'),
+(80000,  'PSE',             (SELECT id_factura FROM alfared.facturas WHERE monto=80000  AND usuario_id=(SELECT id_usuario FROM alfared.usuarios WHERE email='juan@gmail.com') LIMIT 1), 'PENDIENTE');
+
+-- =========================================================
+-- PORTALPAGOS y ENTIDADBANCARIA
+-- =========================================================
+INSERT INTO alfared.portalpagos (pago_id, usuario_id, resultado, mensaje)
+VALUES
+( (SELECT id_pago FROM alfared.pagos WHERE monto=120000 LIMIT 1),
+  (SELECT id_usuario FROM alfared.usuarios WHERE email='maria@gmail.com'),
+  'ÉXITO', 'Pago aprobado' ),
+( (SELECT id_pago FROM alfared.pagos WHERE monto=80000 LIMIT 1),
+  (SELECT id_usuario FROM alfared.usuarios WHERE email='juan@gmail.com'),
+  'ERROR', 'Fondos insuficientes' );
+
+INSERT INTO alfared.entidadbancaria (pago_id, codigo_banco, referencia_banco, resultado_validacion, mensaje_banco)
+VALUES
+( (SELECT id_pago FROM alfared.pagos WHERE monto=120000 LIMIT 1), 'B001', 'REF12345', 'VALIDADO', 'Transacción exitosa' ),
+( (SELECT id_pago FROM alfared.pagos WHERE monto=80000  LIMIT 1), 'B002', 'REF67890', 'RECHAZADO','Fondos insuficientes' );
+
+-- =========================================================
+-- PQRS, ANALIZAR Y GESTIONAR
+-- =========================================================
+INSERT INTO alfared.pqrs (tipo, descripcion, solicitante_id, analista_id, jefe_id)
+VALUES
+('QUEJA', 'El servicio estuvo intermitente en la mañana', (SELECT id_usuario FROM alfared.usuarios WHERE email='maria@gmail.com'), (SELECT id_usuario FROM alfared.usuarios WHERE email='andres@empresa.com'), (SELECT id_usuario FROM alfared.usuarios WHERE email='sofia@empresa.com')),
+('PETICION', 'Quiero un aumento de velocidad', (SELECT id_usuario FROM alfared.usuarios WHERE email='juan@gmail.com'), (SELECT id_usuario FROM alfared.usuarios WHERE email='andres@empresa.com'), (SELECT id_usuario FROM alfared.usuarios WHERE email='sofia@empresa.com')),
+('RECLAMO', 'Cobro indebido en la factura', (SELECT id_usuario FROM alfared.usuarios WHERE email='maria@gmail.com'), (SELECT id_usuario FROM alfared.usuarios WHERE email='andres@empresa.com'), (SELECT id_usuario FROM alfared.usuarios WHERE email='sofia@empresa.com'));
+
+INSERT INTO alfared.analizarpqrs (pqrs_id, analista_id, jefe_id, clasificacion, acciones_determinadas)
+VALUES
+( (SELECT id_pqrs FROM alfared.pqrs WHERE descripcion LIKE 'El servicio estuvo intermitente%' LIMIT 1), (SELECT id_usuario FROM alfared.usuarios WHERE email='andres@empresa.com'), (SELECT id_usuario FROM alfared.usuarios WHERE email='sofia@empresa.com'), 'Problema Técnico', 'Escalar a soporte'),
+( (SELECT id_pqrs FROM alfared.pqrs WHERE descripcion LIKE 'Quiero un aumento de velocidad' LIMIT 1), (SELECT id_usuario FROM alfared.usuarios WHERE email='andres@empresa.com'), (SELECT id_usuario FROM alfared.usuarios WHERE email='sofia@empresa.com'), 'Solicitud Comercial', 'Enviar a ventas');
+
+INSERT INTO alfared.gestionarpqrs (pqrs_id, gestor_id, accion_realizada, observaciones)
+VALUES
+( (SELECT id_pqrs FROM alfared.pqrs WHERE descripcion LIKE 'El servicio estuvo intermitente%' LIMIT 1), (SELECT id_usuario FROM alfared.usuarios WHERE email='andres@empresa.com'), 'Revisar conexión', 'Cliente satisfecho'),
+( (SELECT id_pqrs FROM alfared.pqrs WHERE descripcion LIKE 'Quiero un aumento de velocidad' LIMIT 1), (SELECT id_usuario FROM alfared.usuarios WHERE email='sofia@empresa.com'), 'Escalar a comercial', 'En espera de respuesta');
+
+-- =========================================================
+-- SATISFACCIÓN
+-- =========================================================
+INSERT INTO alfared.satisfaccion (nivel, comentario, usuario_id)
+VALUES
+(5, 'Excelente servicio', (SELECT id_usuario FROM alfared.usuarios WHERE email='maria@gmail.com')),
+(3, 'Normal, puede mejorar', (SELECT id_usuario FROM alfared.usuarios WHERE email='juan@gmail.com'));
+
+-- =========================================================
+-- NOTIFICACIONES Y ATENCIÓN AL CLIENTE
+-- =========================================================
+INSERT INTO alfared.notificarusuario (usuario_id, mensaje, tipo_notificacion, enviado)
+VALUES
+( (SELECT id_usuario FROM alfared.usuarios WHERE email='maria@gmail.com'), 'Su pago ha sido aprobado', 'EMAIL', TRUE ),
+( (SELECT id_usuario FROM alfared.usuarios WHERE email='juan@gmail.com'),  'Su factura está pendiente', 'SMS', FALSE );
+
+INSERT INTO alfared.atencioncliente (cliente_id, tipo_atencion, descripcion)
+VALUES
+( (SELECT id_usuario FROM alfared.usuarios WHERE email='maria@gmail.com'), 'Soporte Técnico', 'Cliente reportó fallas en el internet'),
+( (SELECT id_usuario FROM alfared.usuarios WHERE email='juan@gmail.com'),  'Atención Comercial', 'Cliente pidió aumento de velocidad');
+
+-- =========================================================
+-- ASIGNACIONES CONTADOR
+-- =========================================================
+INSERT INTO alfared.contador_documento (contador_id, documento_id)
+VALUES
+( (SELECT id_usuario FROM alfared.usuarios WHERE email='laura@empresa.com'), (SELECT id_documento FROM alfared.documentos WHERE tipo='Factura' LIMIT 1) )
+ON CONFLICT DO NOTHING;
+
+INSERT INTO alfared.contador_transaccion (contador_id, transaccion_id)
+VALUES
+( (SELECT id_usuario FROM alfared.usuarios WHERE email='laura@empresa.com'), (SELECT id_transaccion FROM alfared.transacciones WHERE monto=120000 LIMIT 1) )
+ON CONFLICT DO NOTHING;
+
+
+--- =====================================================
+--- Datos extra para subconsultas
+--- ====================================================
+INSERT INTO alfared.usuarios (nombre, apellido, email, contrasena, rol_id)
+VALUES ('Laura', 'Gomez', 'laura@empresa.com', '1234',
+       (SELECT id_rol FROM alfared.roles WHERE nombre='CONTADOR'));
+
+INSERT INTO alfared.documentos (tipo, contenido)
+VALUES ('Factura', 'Factura de servicios de internet');
+
+INSERT INTO alfared.contador_documento (contador_id, documento_id)
+VALUES (
+    (SELECT id_usuario FROM alfared.usuarios WHERE email='laura@empresa.com'),
+    (SELECT id_documento FROM alfared.documentos WHERE tipo='Factura' LIMIT 1)
+);
+
+
+COMMIT;

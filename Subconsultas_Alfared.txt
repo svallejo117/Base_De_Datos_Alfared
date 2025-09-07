@@ -1,0 +1,76 @@
+-- =========================================================
+-- 10 SUBCONSULTAS SIMPLES PARA BASE DE DATOS ALFARED
+-- =========================================================
+
+-- 1. Usuarios con facturas mayores a $100,000
+SELECT u.nombre, u.apellido, f.monto
+FROM alfared.usuarios u
+INNER JOIN alfared.facturas f ON u.id_usuario = f.usuario_id
+WHERE f.monto > (SELECT 100000);
+
+-- 2. Facturas de usuarios que son CLIENTES
+SELECT f.id_factura, f.monto, f.fecha_vencimiento
+FROM alfared.facturas f
+WHERE f.usuario_id IN (
+    SELECT u.id_usuario 
+    FROM alfared.usuarios u 
+    INNER JOIN alfared.roles r ON u.rol_id = r.id_rol
+    WHERE r.nombre = 'CLIENTE'
+);
+
+-- 3. PQRS creadas por Maria Ruiz
+SELECT p.tipo, p.descripcion
+FROM alfared.pqrs p
+WHERE p.solicitante_id = (
+    SELECT id_usuario 
+    FROM alfared.usuarios 
+    WHERE email = 'maria@gmail.com'
+);
+
+-- 4. Pagos con monto mayor al pago más bajo
+SELECT p.id_pago, p.monto, p.metodo_pago
+FROM alfared.pagos p
+WHERE p.monto > (SELECT MIN(monto) FROM alfared.pagos);
+
+-- 5. Usuarios que tienen notificaciones
+SELECT u.nombre, u.apellido
+FROM alfared.usuarios u
+WHERE EXISTS (
+    SELECT 1 
+    FROM alfared.notificarusuario n 
+    WHERE n.usuario_id = u.id_usuario
+);
+
+-- 6. Facturas con fecha de vencimiento después de hoy
+SELECT f.id_factura, f.monto, f.fecha_vencimiento
+FROM alfared.facturas f
+WHERE f.fecha_vencimiento > (SELECT CURRENT_DATE);
+
+-- 7. Usuarios con rol de ADMIN o CONTADOR
+SELECT u.nombre, u.apellido, r.nombre as rol
+FROM alfared.usuarios u
+INNER JOIN alfared.roles r ON u.rol_id = r.id_rol
+WHERE u.rol_id IN (
+    SELECT id_rol 
+    FROM alfared.roles 
+    WHERE nombre IN ('ADMIN', 'CONTADOR')
+);
+
+-- 8. Transacciones con estado PENDIENTE
+SELECT t.id_transaccion, t.monto, t.tipo
+FROM alfared.transacciones t
+WHERE t.estado = (SELECT 'PENDIENTE');
+
+-- 9. Documentos asignados a contadores
+SELECT d.tipo, d.contenido
+FROM alfared.documentos d
+INNER JOIN alfared.contador_documento cd ON d.id_documento = cd.documento_id
+INNER JOIN alfared.usuarios u ON cd.contador_id = u.id_usuario
+INNER JOIN alfared.roles r ON u.rol_id = r.id_rol
+WHERE r.nombre = 'CONTADOR';
+
+
+-- 10. Pagos realizados con Tarjeta de Crédito
+SELECT p.id_pago, p.monto, p.fecha_pago
+FROM alfared.pagos p
+WHERE p.metodo_pago = (SELECT 'Tarjeta Crédito');
